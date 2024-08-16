@@ -1,11 +1,20 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE NegativeLiterals #-}
+{-# LANGUAGE FlexibleContexts #-}
+
+module Main where
+
 -- import Data.Matrix.Static
 import qualified Data.Map as Map
 -- import qualified Data.Set as Set
 
+import qualified Data.Tuple.Optics as Optics
+import qualified Optics.Core as Optics
+
 import qualified String.ANSI as ANSI
+
+import Debug.Trace
 
 -- TODO later: optimize!
 -- https://en.wikipedia.org/wiki/Optimal_solutions_for_the_Rubik%27s_Cube#Kociemba's_algorithm
@@ -19,8 +28,7 @@ import qualified String.ANSI as ANSI
  - Orientation means pointing a certain direction. Orientation is relative to an
  - observer, meaning that it is possible to rotate every cubelet simultaneously.
  -
- - Positions on a cube start in one corner (0,0,0) and span to (N,N,N) on an
- - N+1-cube. I.e. (2,2,2) on a classic 3x3.
+ - Positions on a cube start in the center.
  -
  - Given this standard view of a cube,
  -
@@ -38,7 +46,7 @@ import qualified String.ANSI as ANSI
  -            | 42 43 44 |
  -            +----------+
  - 
- - stickers 0, 9, and 57 are part of the cubelet at position (0,0,0).
+ - stickers 0, 9, and 57 are part of the cubelet at position (-1,1,-1).
  -
  - A cube also has faces and slices, which are the collection of stickers
  - sharing a particular X, Y, or Z coordinate. Rotating a face or slice means
@@ -52,32 +60,33 @@ import qualified String.ANSI as ANSI
  -}
 
 -- R is +x
--- U is -y
--- F is -z
+-- U is +y
+-- F is +z
 
 data Cube = Cube Int [Sticker] deriving Show
 data Sticker = Sticker Color Position Orientation deriving Show
-data Position = Position Int Int Int deriving (Show, Eq, Ord)
-data Orientation = Orientation Int Int Int deriving (Show, Eq, Ord)
+newtype Position = Position (Int,Int,Int) deriving (Show, Eq, Ord)
+newtype Orientation = Orientation (Int,Int,Int) deriving (Show, Eq, Ord)
 
 pattern FaceU, FaceD, FaceF, FaceB, FaceL, FaceR :: Orientation
-pattern FaceU = Orientation 0 0 -1
-pattern FaceD = Orientation 0 0 1
-pattern FaceF = Orientation -1 0 0
-pattern FaceB = Orientation 1 0 0
-pattern FaceL = Orientation 0 -1 0
-pattern FaceR = Orientation 0 1 0
+pattern FaceU = Orientation (0, 0,-1)
+pattern FaceD = Orientation (0, 0,1)
+pattern FaceF = Orientation (-1, 0,0)
+pattern FaceB = Orientation (1, 0,0)
+pattern FaceL = Orientation (0, -1,0)
+pattern FaceR = Orientation (0, 1,0)
 
 data Color = Red | Green | Blue | Yellow | Orange | White deriving (Show)
 
 solved3x3 :: Cube
 solved3x3 = Cube 3 $ front <> back <> left <> right <> up <> down where
-    up = [ Sticker White (Position x 0 z) FaceU | x <- [0..2], z <- [0..2] ]
-    down = [ Sticker Yellow (Position x 2 z) FaceD | x <- [0..2], z <- [0..2] ]
-    left = [ Sticker Orange (Position 0 y z) FaceL | y <- [0..2], z <- [0..2] ]
-    right = [ Sticker Red (Position 2 y z) FaceR | y <- [0..2], z <- [0..2] ]
-    front = [ Sticker Blue (Position x y 0) FaceF | x <- [0..2], y <- [0..2] ]
-    back = [ Sticker Green (Position x y 2) FaceB | x <- [0..2], y <- [0..2] ]
+    rng   = [-1..1]
+    up    = [ Sticker White  (Position (x, -1, z)) FaceU | x <- rng, z <- rng ]
+    down  = [ Sticker Yellow (Position (x, 1, z)) FaceD | x <- rng, z <- rng ]
+    left  = [ Sticker Orange (Position (-1, y, z)) FaceL | y <- rng, z <- rng ]
+    right = [ Sticker Red    (Position (1, y, z)) FaceR | y <- rng, z <- rng ]
+    front = [ Sticker Blue   (Position (x, y, -1)) FaceF | x <- rng, y <- rng ]
+    back  = [ Sticker Green  (Position (x, y, 1)) FaceB | x <- rng, y <- rng ]
 
 
 
@@ -112,25 +121,26 @@ prettyCube (Cube size stickers) = concat
     faceMap :: [Sticker] -> Map.Map Position Sticker
     faceMap = Map.fromList . map (\s@(Sticker _ p _) -> (p,s))
 
-    pos = [0 .. size-1]
+    w = size `div` 2
+    pos = [-w..w]
     neg = reverse pos
 
     spaces = replicate size ' '
     space x = spaces <> x
 
     -- The back row has z = 2 and is shown on top.
-    up = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ uStickers Map.! Position x 0 z) pos)) neg
-    -- Mirrored. front row (z = 0) is shown first.
-    down = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ dStickers Map.! Position x 2 z) pos)) pos
+    up = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ uStickers Map.! Position (x, -w, z)) pos)) neg
+    -- Mirrored. front row (z = -w) is shown first.
+    down = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ dStickers Map.! Position (x, w, z)) pos)) pos
 
     -- negative z, positive y
-    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! Position 0 y z) neg) pos
+    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! Position (-w, y, z)) neg) pos
     -- positive z, positive y
-    right = map (\y -> concatMap (\z -> prettySticker $ rStickers Map.! Position 2 y z) pos) pos
+    right = map (\y -> concatMap (\z -> prettySticker $ rStickers Map.! Position (w, y, z)) pos) pos
     -- positive x, positive y
-    front = map (\y -> concatMap (\x -> prettySticker $ fStickers Map.! Position x y 0) pos) pos
+    front = map (\y -> concatMap (\x -> prettySticker $ fStickers Map.! Position (x, y, -w)) pos) pos
     -- negative x, positive y
-    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! Position x y 2) neg) pos
+    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! Position (x, y, w)) neg) pos
 
     lf = zipWith (<>) left front
     lfr = zipWith (<>) lf right
@@ -142,18 +152,99 @@ prettyCube (Cube size stickers) = concat
 -- pattern U' = U'i 1
 -- pattern U2 = U2i 1
 
+-- R is +x
+-- U is +y
+-- F is +z
+
 
 {- Modifying a Rubik's cube
  -
  - Start with R as an example. This rotates the R face clockwise. It affects
- - stickers with position x = 2.
+ - stickers with position x = 1.
  -
  - Rotation: All stickers rotate around the x axis. FaceB becomes FaceF and so
  - on.
  -
- - Translation: a face at (2, 2, 1) moves to (2, 1, 0).
+ - Translation: a face at (1, 1, 1) moves to (1, 0, -1).
  -
- - I can brute force this, though there's probably an equation that holds that I
- - could just map over all of them. Let's start with a brute force and see if I
- - can't figure it out.
+ - Oh yeah, I remember now: it's sine and cosine.
  -}
+
+pattern Coord :: Int -> Int -> Int -> (Int, Int, Int)
+pattern Coord { cx, cy, cz } = (cx, cy, cz)
+
+-- Rotating a sticker means rotating its position and orientation. Rotation
+-- happens on an axis and has a magnitude.
+
+data Axis = R | U | F deriving (Show)
+
+-- Default math uses the following formula:
+--
+-- x' = x * cos phi - y * sin phi
+-- y' = x * sin phi + y * cos phi
+--
+-- That's fine, but we have to negate phi because for a cube, a positive turn is
+-- clockwise, not ccw. cos is symmetric around phi so it's just sine that needs
+-- to change.
+
+rotate :: Axis -> Int -> (Int,Int,Int) -> (Int,Int,Int)
+rotate R = rotate' Optics._2 Optics._3
+rotate U = rotate' Optics._3 Optics._1
+rotate F = rotate' Optics._1 Optics._2
+
+rotate' ax1 ax2 n coord =
+    let val = Optics.view ax1 coord
+        val2 = Optics.view ax2 coord
+        val' = val * cosine n - val2 * sine n
+        val2' = val * sine n + val2 * cosine n
+    in Optics.set ax1 val' $ Optics.set ax2 val2' coord
+
+-- Multiples of pi/2.
+-- Sine is inverted to take CW as positive into account.
+sine, cosine :: Int -> Int
+
+sine 0 = 0
+sine 1 = -1
+sine 2 = 0
+sine 3 = 1
+sine n = sine (n `mod` 4)
+
+cosine 0 = 1
+cosine 1 = 0
+cosine 2 = -1
+cosine 3 = 0
+cosine n = cosine (n `mod` 4)
+
+main = do
+    putStrLn "Rotating centers on their axis doesn't change them:"
+    putStr "    R: "
+    print $ all ((== (1,0,0)) . (\mag -> rotate R mag (1,0,0))) [-1..2]
+    putStr "    U: "
+    print $ all ((== (0,1,0)) . (\mag -> rotate U mag (0,1,0))) [-1..2]
+    putStr "    F: "
+    print $ all ((== (0,0,1)) . (\mag -> rotate F mag (0,0,1))) [-1..2]
+
+    putStr "rotate R 1 (1,1,0) == (1,0,-1): "
+    print $ rotate R 1 (1,1,0) == (1,0,-1)
+    putStr "rotate R 2 (1,1,0) == (1,-1,0): "
+    print $ rotate R 2 (1,1,0) == (1,-1,0)
+    putStr "rotate R (-1) (1,1,0) == (1,0,1): "
+    print $ rotate R (-1) (1,1,0) == (1,0,1)
+
+    putStr "rotate U 1 (1,1,0) == (0,1,1): "
+    print $ rotate U 1 (1,1,0) == (0,1,1)
+    putStr "rotate U 2 (1,1,0) == (-1,1,0): "
+    print $ rotate U 2 (1,1,0) == (-1,1,0)
+    putStr "rotate U (-1) (1,1,0) == (0,1,-1): "
+    print $ rotate U (-1) (1,1,0) == (0,1,-1)
+
+    putStr "rotate F 1 (1,1,0) == (0,-1,0): "
+    print $ rotate F 1 (1,1,0) == (0,-1,0)
+    putStr "rotate F 2 (1,1,0) == (-1,1,0): "
+    print $ rotate F 2 (1,1,0) == (-1,1,0)
+    putStr "rotate F (-1) (1,1,0) == (0,1,-1): "
+    print $ rotate F (-1) (1,1,0) == (0,1,-1)
+
+    putStr "Null rotation on any axis causes no change: "
+    let positions = filter (/= (0,0,0)) [Coord x y z | x <- [-1..1], y <- [-1..1], z <- [-1..1]]
+    print $ and [ c1 == c2 | c1 <- positions, ax <- [R,U,F], let c2 = rotate ax 0 c1 ]

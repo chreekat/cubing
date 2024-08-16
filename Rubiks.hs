@@ -1,5 +1,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE NegativeLiterals #-}
 -- import Data.Matrix.Static
 import qualified Data.Map as Map
 -- import qualified Data.Set as Set
@@ -50,10 +51,23 @@ import qualified String.ANSI as ANSI
  - that can be tackled by smart constructors, I'm sure.
  -}
 
+-- R is +x
+-- U is -y
+-- F is -z
+
 data Cube = Cube Int [Sticker] deriving Show
 data Sticker = Sticker Color Position Orientation deriving Show
 data Position = Position Int Int Int deriving (Show, Eq, Ord)
-data Orientation = FaceU | FaceD | FaceF | FaceB | FaceL | FaceR deriving (Show, Eq)
+data Orientation = Orientation Int Int Int deriving (Show, Eq, Ord)
+
+pattern FaceU, FaceD, FaceF, FaceB, FaceL, FaceR :: Orientation
+pattern FaceU = Orientation 0 0 -1
+pattern FaceD = Orientation 0 0 1
+pattern FaceF = Orientation -1 0 0
+pattern FaceB = Orientation 1 0 0
+pattern FaceL = Orientation 0 -1 0
+pattern FaceR = Orientation 0 1 0
+
 data Color = Red | Green | Blue | Yellow | Orange | White deriving (Show)
 
 solved3x3 :: Cube
@@ -75,14 +89,17 @@ ansi Yellow = ANSI.rgbBg 255 255 0 " "
 ansi Orange = ANSI.rgbBg 255 165 0 " "
 ansi White  = ANSI.rgbBg 255 255 255 " "
 
+prettySticker :: Sticker -> String
 prettySticker (Sticker c _ _) = ansi c
 
+prettyCube :: Cube -> [Char]
 prettyCube (Cube size stickers) = concat
     [ up
     , lfrb
     , down
     ]
-    where 
+    where
+
     uStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceU) stickers
     dStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceD) stickers
     lStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceL) stickers
@@ -90,41 +107,34 @@ prettyCube (Cube size stickers) = concat
     fStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceF) stickers
     bStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceB) stickers
 
+    -- | Given all stickers on a face, put them in a map of locations. Coordinates
+    -- are relative to which face has been selected.
+    faceMap :: [Sticker] -> Map.Map Position Sticker
+    faceMap = Map.fromList . map (\s@(Sticker _ p _) -> (p,s))
+
     pos = [0 .. size-1]
     neg = reverse pos
 
     spaces = replicate size ' '
-
     space x = spaces <> x
+
     -- The back row has z = 2 and is shown on top.
-    up = unlines $ map space $ map (\z -> concatMap (\x -> prettySticker $ uStickers Map.! (Position x 0 z)) pos) neg
+    up = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ uStickers Map.! Position x 0 z) pos)) neg
     -- Mirrored. front row (z = 0) is shown first.
-    down = unlines $ map space $ map (\z -> concatMap (\x -> prettySticker $ dStickers Map.! (Position x 2 z)) pos) pos
+    down = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ dStickers Map.! Position x 2 z) pos)) pos
 
     -- negative z, positive y
-    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! (Position 0 y z)) neg) pos
+    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! Position 0 y z) neg) pos
     -- positive z, positive y
-    right = map (\y -> concatMap (\z -> prettySticker $ rStickers Map.! (Position 2 y z)) pos) pos
+    right = map (\y -> concatMap (\z -> prettySticker $ rStickers Map.! Position 2 y z) pos) pos
     -- positive x, positive y
-    front = map (\y -> concatMap (\x -> prettySticker $ fStickers Map.! (Position x y 0)) pos) pos
+    front = map (\y -> concatMap (\x -> prettySticker $ fStickers Map.! Position x y 0) pos) pos
     -- negative x, positive y
-    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! (Position x y 2)) neg) pos
+    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! Position x y 2) neg) pos
 
     lf = zipWith (<>) left front
     lfr = zipWith (<>) lf right
     lfrb = unlines $ zipWith (<>) lfr back
-
-
-
-
--- | Given all stickers on a face, put them in a map of locations. Coordinates
--- are relative to which face has been selected.
-faceMap :: [Sticker] -> Map.Map Position Sticker
-faceMap stickers = Map.fromList $ map (\s@(Sticker _ p _) -> (p,s)) stickers
-
--- x is on R
--- y is on U
--- z is on F
 
 -- data Move = Ui Int | U'i Int | U2i Int
 -- 
@@ -132,3 +142,18 @@ faceMap stickers = Map.fromList $ map (\s@(Sticker _ p _) -> (p,s)) stickers
 -- pattern U' = U'i 1
 -- pattern U2 = U2i 1
 
+
+{- Modifying a Rubik's cube
+ -
+ - Start with R as an example. This rotates the R face clockwise. It affects
+ - stickers with position x = 2.
+ -
+ - Rotation: All stickers rotate around the x axis. FaceB becomes FaceF and so
+ - on.
+ -
+ - Translation: a face at (2, 2, 1) moves to (2, 1, 0).
+ -
+ - I can brute force this, though there's probably an equation that holds that I
+ - could just map over all of them. Let's start with a brute force and see if I
+ - can't figure it out.
+ -}

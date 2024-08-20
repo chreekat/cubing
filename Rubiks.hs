@@ -1,6 +1,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE NegativeLiterals #-}
+{-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Main where
@@ -139,16 +139,16 @@ prettyCube (Cube size stickers) = concat
     -- pos x, pos z
     up = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ uStickers Map.! halp x w z) pos)) pos
     -- Mirrored. front row (z = -w) is shown first.
-    down = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ dStickers Map.! halp x (-w) z ) pos)) neg
+    down = unlines $ map (space . (\z -> concatMap (\x -> prettySticker $ dStickers Map.! halp x -w z ) pos)) neg
 
     -- positive z, negative y
-    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! halp (-w) y z) pos) neg
+    left = map (\y -> concatMap (\z -> prettySticker $ lStickers Map.! halp -w y z) pos) neg
     -- neg z, neg y
     right = map (\y -> concatMap (\z -> prettySticker $ rStickers Map.! halp w y z) neg) neg
     -- positive x, neg y
     front = map (\y -> concatMap (\x -> prettySticker $ fStickers Map.! halp x y w) pos) neg
     -- neg x, neg y
-    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! halp x y (-w)) neg) neg
+    back = map (\y -> concatMap (\x -> prettySticker $ bStickers Map.! halp x y -w) neg) neg
 
     lf = zipWith (<>) left front
     lfr = zipWith (<>) lf right
@@ -265,15 +265,15 @@ main = do
     print $ rotate Rx 1 (1,1,0) == (1,0,-1)
     putStr "rotate Rx 2 (1,1,0) == (1,-1,0): "
     print $ rotate Rx 2 (1,1,0) == (1,-1,0)
-    putStr "rotate Rx (-1) (1,1,0) == (1,0,1): "
-    print $ rotate Rx (-1) (1,1,0) == (1,0,1)
+    putStr "rotate Rx -1 (1,1,0) == (1,0,1): "
+    print $ rotate Rx -1 (1,1,0) == (1,0,1)
 
     putStr "rotate Uy 1 (1,1,0) == (0,1,1): "
     print $ rotate Uy 1 (1,1,0) == (0,1,1)
     putStr "rotate Uy 2 (1,1,0) == (-1,1,0): "
     print $ rotate Uy 2 (1,1,0) == (-1,1,0)
-    putStr "rotate Uy (-1) (1,1,0) == (0,1,-1): "
-    print $ rotate Uy (-1) (1,1,0) == (0,1,-1)
+    putStr "rotate Uy -1 (1,1,0) == (0,1,-1): "
+    print $ rotate Uy -1 (1,1,0) == (0,1,-1)
 
     putStr "rotate Fz 1 (1,1,0) == (1,-1,0): "
     putStr . show $ rotate Fz 1 (1,1,0)
@@ -283,13 +283,13 @@ main = do
     putStr . show $ rotate Fz 2 (-1,-1,0)
     putStr ": "
     print $ rotate Fz 2 (1,1,0) == (-1,-1,0)
-    putStr "rotate Fz (-1) (1,1,0) == (-1,1,0): "
+    putStr "rotate Fz -1 (1,1,0) == (-1,1,0): "
     putStr . show $ rotate Fz 3 (1,1,0)
     putStr ": "
-    print $ rotate Fz (-1) (1,1,0) == (-1,1,0)
+    print $ rotate Fz -1 (1,1,0) == (-1,1,0)
 
     putStr "Null rotation on any axis causes no change: "
     let positions = filter (/= (0,0,0)) [(x,y,z) | x <- [-1..1], y <- [-1..1], z <- [-1..1]]
     print $ and [ c1 == c2 | c1 <- positions, ax <- [Rx,Uy,Fz], let c2 = rotate ax 0 c1 ]
 
-    putStrLn $ prettyCube solved3x3
+    putStrLn $ prettyCube $ move R' $ move D' $ move B' $ move B $ move D $ move R solved3x3

@@ -7,7 +7,7 @@ module Main where
 
 -- import Data.Matrix.Static
 import qualified Data.Map as Map
--- import qualified Data.Set as Set
+import qualified Data.Set as Set
 
 import qualified Data.Tuple.Optics as Optics
 import qualified Optics.Core as Optics
@@ -79,7 +79,7 @@ pattern FaceD = Orientation (0,  -1,  0)
 pattern FaceF = Orientation (0,   0,  1)
 pattern FaceB = Orientation (0,   0, -1)
 
-data Color = Red | Green | Blue | Yellow | Orange | White deriving (Show)
+data Color = Red | Green | Blue | Yellow | Orange | White deriving (Show, Eq, Ord)
 
 solved3x3 :: Cube
 solved3x3 = solvedNxN 3
@@ -251,6 +251,13 @@ move D' = rotateSlice (Slice Uy -1) 1
 move F' = rotateSlice (Slice Fz 1)  -1
 move B' = rotateSlice (Slice Fz -1) 1
 
+-- | Knowing what move to do next will require finding cubelets. We don't
+-- actually store cubelets -- we store stickers. So we need to make a map of
+-- position to stickers, and then find the position that has
+findCubelet :: [Color] -> Cube -> [Position]
+findCubelet colors (Cube _ stickers) =
+    let posMap = Map.fromListWith (<>) $ map (\(Sticker c p _) -> (p, Set.singleton c)) stickers
+    in Map.keys $ Map.filter (== Set.fromList colors) posMap
 
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"

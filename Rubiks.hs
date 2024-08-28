@@ -224,8 +224,8 @@ rotateSticker ax mag (Sticker c p o) = Sticker c (coerce rotate ax mag p) (coerc
 
 data Slice = Slice Axis Int
 
-rotateSlice :: Axis -> Int -> Slice -> Cube -> Cube
-rotateSlice ax mag = modifySlice (rotateSticker ax mag)
+rotateSlice :: Slice -> Int -> Cube -> Cube
+rotateSlice slice@(Slice ax _) mag = modifySlice (rotateSticker ax mag) slice
 
 modifySlice :: (Sticker -> Sticker) -> Slice -> Cube -> Cube
 modifySlice f (Slice ax n) (Cube size stickers) = Cube size $ map (\s@(Sticker _ (Position p) _) -> if Optics.view (axis ax) p == n then f s else s) stickers
@@ -238,18 +238,18 @@ data Move = R | L | U | D | F | B
           | R' | L' | U' | D' | F' | B'
 
 move :: Move -> Cube -> Cube
-move R  = rotateSlice Rx 1  (Slice Rx 1)
-move L  = rotateSlice Rx -1 (Slice Rx -1)
-move U  = rotateSlice Uy 1  (Slice Uy 1)
-move D  = rotateSlice Uy -1 (Slice Uy -1)
-move F  = rotateSlice Fz 1  (Slice Fz 1)
-move B  = rotateSlice Fz -1 (Slice Fz -1)
-move R' = rotateSlice Rx -1  (Slice Rx 1)
-move L' = rotateSlice Rx 1 (Slice Rx -1)
-move U' = rotateSlice Uy -1  (Slice Uy 1)
-move D' = rotateSlice Uy 1 (Slice Uy -1)
-move F' = rotateSlice Fz -1  (Slice Fz 1)
-move B' = rotateSlice Fz 1 (Slice Fz -1)
+move R  = rotateSlice (Slice Rx 1)  1
+move L  = rotateSlice (Slice Rx -1) -1
+move U  = rotateSlice (Slice Uy 1)  1
+move D  = rotateSlice (Slice Uy -1) -1
+move F  = rotateSlice (Slice Fz 1)  1
+move B  = rotateSlice (Slice Fz -1) -1
+move R' = rotateSlice (Slice Rx 1)  -1
+move L' = rotateSlice (Slice Rx -1) 1
+move U' = rotateSlice (Slice Uy 1)  -1
+move D' = rotateSlice (Slice Uy -1) 1
+move F' = rotateSlice (Slice Fz 1)  -1
+move B' = rotateSlice (Slice Fz -1) 1
 
 
 main = do

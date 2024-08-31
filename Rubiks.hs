@@ -24,12 +24,12 @@ import GHC.Stack (HasCallStack)
 
 {- How to talk about a rubik's cube.
  -
- - A cube is comprised of cubelets. A cube itself has no orientation, but
- - cubelets do. They also have position and stickers. One, two, or three
+ - A cube is comprised of cubies. A cube itself has no orientation, but
+ - cubies do. They also have position and stickers. One, two, or three
  - stickers.
  -
  - Orientation means pointing a certain direction. Orientation is relative to an
- - observer, meaning that it is possible to rotate every cubelet simultaneously.
+ - observer, meaning that it is possible to rotate every cubie simultaneously.
  -
  - Positions on a cube start in the center.
  -
@@ -49,13 +49,13 @@ import GHC.Stack (HasCallStack)
  -            | 42 43 44 |
  -            +----------+
  -
- - stickers 0, 9, and 57 are part of the cubelet at position (-1,1,-1).
+ - stickers 0, 9, and 57 are part of the cubie at position (-1,1,-1).
  -
  - A cube also has faces and slices, which are the collection of stickers
  - sharing a particular X, Y, or Z coordinate. Rotating a face or slice means
- - rotating and translating the cubelets the stickers of the slice are found on.
+ - rotating and translating the cubies the stickers of the slice are found on.
  -
- - Actually, cubelets don't have orientation, either. Stickers do. Same with
+ - Actually, cubies don't have orientation, either. Stickers do. Same with
  - position. It just so happens that one, two, or three stickers can share the
  - same position. The only problem with this formulation is that it might be
  - hard to generate valid arbitrary scrambles from arbitrary stickers. But
@@ -251,11 +251,11 @@ move D' = rotateSlice (Slice Uy -1) 1
 move F' = rotateSlice (Slice Fz 1)  -1
 move B' = rotateSlice (Slice Fz -1) 1
 
--- | Knowing what move to do next will require finding cubelets. We don't
--- actually store cubelets -- we store stickers. So we need to make a map of
+-- | Knowing what move to do next will require finding cubies. We don't
+-- actually store cubies -- we store stickers. So we need to make a map of
 -- position to stickers, and then find the position that has
-findCubelet :: [Color] -> Cube -> [Position]
-findCubelet colors (Cube _ stickers) =
+findCubie :: [Color] -> Cube -> [Position]
+findCubie colors (Cube _ stickers) =
     let posMap = Map.fromListWith (<>) $ map (\(Sticker c p _) -> (p, Set.singleton c)) stickers
     in Map.keys $ Map.filter (== Set.fromList colors) posMap
 

@@ -2,19 +2,19 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
--- import Data.Matrix.Static
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-
-import qualified Data.Tuple.Optics as Optics
-import qualified Optics.Core as Optics
-
-import qualified String.ANSI as ANSI
-
 import Data.Coerce (coerce)
+import Data.List qualified as List
+import Data.Map qualified as Map
+import Data.Set qualified as Set
+import Data.Tuple.Optics qualified as Optics
+import Optics.Core qualified as Optics
+import String.ANSI qualified as ANSI
+import System.Random qualified as Rand
 
 import Debug.Trace
 import GHC.Stack (HasCallStack)
@@ -67,7 +67,7 @@ import GHC.Stack (HasCallStack)
 -- F is +z
 
 data Cube = Cube Int [Sticker] deriving Show
-data Sticker = Sticker Color Position Orientation deriving Show
+data Sticker = Sticker Color Position Orientation deriving (Show, Eq, Ord)
 newtype Position = Position (Int,Int,Int) deriving (Show, Eq, Ord)
 newtype Orientation = Orientation (Int,Int,Int) deriving (Show, Eq, Ord)
 
@@ -228,7 +228,12 @@ rotateSlice :: Slice -> Int -> Cube -> Cube
 rotateSlice slice@(Slice ax _) mag = modifySlice (rotateSticker ax mag) slice
 
 modifySlice :: (Sticker -> Sticker) -> Slice -> Cube -> Cube
-modifySlice f (Slice ax n) (Cube size stickers) = Cube size $ map (\s@(Sticker _ (Position p) _) -> if Optics.view (axis ax) p == n then f s else s) stickers
+modifySlice f (Slice ax n) (Cube size stickers) = Cube size stickers'
+  where
+    stickers' =
+        map (\s@(Sticker _ (Position p) _) ->
+                if Optics.view (axis ax) p == n then f s else s)
+            stickers
 
 axis Rx = Optics._1
 axis Uy = Optics._2
@@ -256,8 +261,88 @@ move B' = rotateSlice (Slice Fz -1) 1
 -- position to stickers, and then find the position that has
 findCubie :: [Color] -> Cube -> [Position]
 findCubie colors (Cube _ stickers) =
-    let posMap = Map.fromListWith (<>) $ map (\(Sticker c p _) -> (p, Set.singleton c)) stickers
-    in Map.keys $ Map.filter (== Set.fromList colors) posMap
+    let posMap =
+            Map.fromListWith (<>)
+                (map (\(Sticker c p _) -> (p, Set.singleton c)) stickers)
+    in Map.keys (Map.filter (== Set.fromList colors) posMap)
+
+
+-- Next thing to do is generate a valid solvable scrambled cube.
+-- First, a scramble, which may not be solvable.
+-- To scramble, we need a list of cubies, which will then place randomly. A list
+-- is easy -- we already did that in findCubie. But hang on, we also need to
+-- keep the correct handedness of the corners, so we can't lose track of that.
+-- Now I need to think of a way to represent a corner cubie that maintains handedness. If I stick to 3d, I can hard-code the creation of the 8 cubies like this:
+corners = [[White,Red,Green],[White,Green,Orange],[White,Orange,Blue],[White,Blue,Red],[Yellow,Red,Blue],[Yellow,Blue,Orange],[Yellow,Orange,Green],[Yellow,Green,Red]]
+
+-- If I wanted to support more dimensions, what would I do? Let's think about
+-- that later. Edges are easier, they can't get messed up, though their number
+-- changes based on the size of the cube:
+edges n =
+    concat $ replicate (4 - n) [[White,Red],[White,Green],[White,Orange],[White,Blue],[Yellow,Red],[Yellow,Green],[Yellow,Orange],[Yellow,Blue],[Red,Blue],[Green,Red],[Orange,Green],[Blue,Orange]]
+
+faces n =
+    let numFaces = (n - 2) ^ 2
+    in concat $ replicate numFaces [[Red],[Green],[Orange],[Blue],[White],[Yellow]]
+
+-- For corners, we favor the y axis (white/orange). A cubie can be rotated 0, 1,
+-- or 2, which causes its favored sticker (head of the list) to be parallel to
+-- the y axis, rotated 120 clockwise, or rotated 120 counterclockwise. Given a
+-- position for the cubie and its rotation, we can calculate the orientation of
+-- its stickers. E.g. Position = (1,1,1) and rotation = 1 on cubie
+-- [Yellow,Blue,Orange] means Yellow has orientation (1,0,0), Blue has
+-- orientation (0,0,1), and Orange has orientation (0,1,0). I presume there's a
+-- matrix equation we can derive. What about in polar coordinates? Corner
+-- positions are φ and θ, rotation is σ. Well, we were already using polar for
+-- rotation. I don't see this helping. Let's stick to cartesian.
+--
+-- Check it: Symmetry.
+--
+-- At Position = (1,1,1), the orientations are Uy, Rx, Fz. Rotate these around
+-- the axes to get orientations for the other positions. (1,1,-1) is rotation -1
+-- around the y axis, which gives Uy, -Fz, Rx. We can already do this with
+-- rotateSticker. So: start all cubies at 1,1,1. Independently rotate the cubies
+-- 0,1, or 2. zip them with a list of all possible rotations to slide them into
+-- their correct places.
+
+-- | How to walk to all the corners, starting from (1,1,1)
+cornerWalk = [[], [Uy],[Uy,Uy],[Uy,Uy,Uy],[Fz],[Fz,Uy],[Fz,Uy,Uy],[Fz,Uy,Uy,Uy]]
+
+
+-- | Rotate a corner cubie.
+rotateCorner :: Int -> [Color] -> [Color]
+rotateCorner n = take 3 . drop n . cycle
+
+randomRotateCorner :: [Color] -> IO [Color]
+randomRotateCorner c = do
+    n <- Rand.randomRIO (0,2)
+    pure $ rotateCorner n c
+
+
+-- So far a corner has been represented as 3 colors positioned at (1,1,1) and
+-- oriented [Uy, Rx, Fz] respectively. Now let's turn 3 colors into Stickers.
+cornerColorsAsStickers :: [Color] -> [Sticker]
+cornerColorsAsStickers = zipWith toSticker [Uy, Rx, Fz] where
+    toSticker o c = Sticker c (Position (1,1,1)) o
+
+walkCorner sticker rotations = foldr (\s o -> rotateSticker o 1 s) sticker rotations
+
+randomCorners :: IO [Sticker]
+randomCorners = do
+    randCorners <-
+        (pure . cornerColorsAsStickers) =<< shuffle =<< mapM randomRotateCorner corners
+    pure (zipWith walkCorner randcorners cornerWalk)
+
+shuffle xs g =
+    let ns :: [Int] = take (length xs) $ Rand.randoms g
+    in map snd $ List.sortOn fst $ zip ns xs
+
+randomCube :: Int -> Cube
+randomCube n =
+    let c@(Cube _ stickers) = solvedNxN n
+        cubies = Map.fromListWith (<>) $
+            map (\sticker@(Sticker _ p _) -> (p, Set.singleton sticker)) $ stickers
+    in traceShow cubies c
 
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"

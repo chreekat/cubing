@@ -266,7 +266,7 @@ findCubie colors (Cube _ stickers) =
 crossProduct :: (Int,Int,Int) -> (Int,Int,Int) -> (Int,Int,Int)
 crossProduct (a_x, a_y, a_z) (b_x, b_y, b_z) = (a_y*b_z - a_z*b_y, a_z*b_x - a_x*b_z, a_x*b_y - a_y*b_x)
 
--- | The permutation of a corner.
+-- | The parity of a corner.
 --
 -- Clockwise = 1, Counterclockwise = 2, None = 0
 --
@@ -274,23 +274,24 @@ crossProduct (a_x, a_y, a_z) (b_x, b_y, b_z) = (a_y*b_z - a_z*b_y, a_z*b_x - a_x
 --
 -- 1. Find the orientation O of the white or yellow sticker of a cubie at position P
 -- 2. Calculate the cross product C of O × P
--- 3. If C_y is zero, permutation is None
---    If C_y is the the same sign as P_y, permutation is Clockwise.
---    Otherwise permutation is Counterclockwise.
-cornerPerm :: Cube -> Position -> Int
-cornerPerm (Cube _ stickers) p@(Position (_,p_y,_)) =
+-- 3. If C_y is zero, parity is None
+--    If C_y is the the same sign as P_y, parity is Clockwise.
+--    Otherwise parity is Counterclockwise.
+cornerParity :: Cube -> Position -> Int
+cornerParity (Cube _ stickers) p@(Position (_,p_y,_)) =
     let Sticker _ _ o = head $ filter (\(Sticker c p' _) -> c `elem` [Yellow, White] && p' == p) stickers
         (_,c_y,_) = crossProduct (coerce o) (coerce p)
     in case signum c_y of
         0 -> 0
         s -> if s == signum p_y then 2 else 1
 
-totalCornerPerm :: Cube -> Int
-totalCornerPerm c@(Cube size _) = sum $
+totalCornerParity :: Cube -> Int
+totalCornerParity c@(Cube size _) = sum $
     let w = size `div` 2
         a = [-w,w]
-    in [cornerPerm c (Position (x,y,z)) | x <- a, y <- a, z <- a]
+    in [cornerParity c (Position (x,y,z)) | x <- a, y <- a, z <- a]
 
+-- Next up is permutation parity
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"
     putStr "    Rx: "

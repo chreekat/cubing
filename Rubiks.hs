@@ -66,8 +66,14 @@ import GHC.Stack (HasCallStack)
 -- U is +y
 -- F is +z
 
-data Cube = Cube Int [Sticker] deriving Show
+data Cube = Cube
+    { cubeSize :: Word
+    , cubeStickers :: [Sticker]
+    , cubeIndices :: [CubieIndex]
+    } deriving Show
 data Sticker = Sticker Color Position Orientation deriving (Show, Eq, Ord)
+data CubieIndex = CubieIndex Position Word deriving (Show, Eq, Ord)
+
 newtype Position = Position (Int,Int,Int) deriving (Show, Eq, Ord)
 newtype Orientation = Orientation (Int,Int,Int) deriving (Show, Eq, Ord)
 
@@ -84,16 +90,26 @@ data Color = Red | Green | Blue | Yellow | Orange | White deriving (Show, Eq, Or
 solved3x3 :: Cube
 solved3x3 = solvedNxN 3
 
-solvedNxN :: Int -> Cube
-solvedNxN n = Cube n $ front <> back <> left <> right <> up <> down where
-    w = n `div` 2
-    rng   = [-w..w] List.\\ [0|even n]
-    right = [Sticker Green    (Position (w,  y,  z))  FaceR | y <- rng, z <- rng ]
-    left  = [Sticker Blue (Position (-w, y,  z))  FaceL | y <- rng, z <- rng ]
+cubiePositions :: Word -> [Position]
+cubiePositions size =
+    let w = fromIntegral size `div` 2
+        rng = [-w..w] List.\\ [0 | even size]
+        -- Center postions have only one nonzero element
+        isCenter = (<= 1) . length . filter (/= 0)
+    in [Position (x,y,z) | x <- rng, y <- rng, z <- rng, not $ isCenter [x,y,z]]
+
+solvedNxN :: Word -> Cube
+solvedNxN size = Cube size colorList indexList where
+    w = fromIntegral size `div` 2
+    rng   = [-w..w] List.\\ [0|even size]
+    right = [Sticker Green  (Position (w,  y,  z))  FaceR | y <- rng, z <- rng ]
+    left  = [Sticker Blue   (Position (-w, y,  z))  FaceL | y <- rng, z <- rng ]
     up    = [Sticker White  (Position (x,  w,  z))  FaceU | x <- rng, z <- rng ]
     down  = [Sticker Yellow (Position (x,  -w, z))  FaceD | x <- rng, z <- rng ]
-    front = [Sticker Orange  (Position (x,  y,  w))  FaceF | x <- rng, y <- rng ]
-    back  = [Sticker Red   (Position (x,  y,  -w)) FaceB | x <- rng, y <- rng ]
+    front = [Sticker Orange (Position (x,  y,  w))  FaceF | x <- rng, y <- rng ]
+    back  = [Sticker Red    (Position (x,  y,  -w)) FaceB | x <- rng, y <- rng ]
+    colorList = front <> back <> left <> right <> up <> down
+    indexList = zipWith CubieIndex (cubiePositions size) [1..]
 
 ansi :: Color -> String
 ansi Red    = ANSI.redBg " "
@@ -113,13 +129,17 @@ faceMap = Map.fromListWithKey spotError . map (\s@(Sticker _ p _) -> (p,s))
     spotError k _ _ = error $ "Duplicate sticker at " <> show k
 
 prettyCube :: HasCallStack => Cube -> [Char]
-prettyCube (Cube size stickers) = concat
+prettyCube (Cube size stickers idxs) = concat
     [ up
     , lfrb
     , down
+    , indices
     ]
     where
 
+    indices = show $ map i (List.sortOn p idxs)
+        where p (CubieIndex p' _) = p'
+              i (CubieIndex _ i') = i'
     uStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceU) stickers
     dStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceD) stickers
     lStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceL) stickers
@@ -127,11 +147,11 @@ prettyCube (Cube size stickers) = concat
     fStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceF) stickers
     bStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceB) stickers
 
-    w = size `div` 2
+    w = fromIntegral size `div` 2
     pos = [-w..w] List.\\ [0|even size]
     neg = reverse pos
 
-    spaces = replicate size ' '
+    spaces = replicate (fromIntegral size) ' '
     space x = spaces <> x
 
     mkPos a b c = {-traceShowId $-} Position (a,b,c)
@@ -212,21 +232,27 @@ cosine n = cosine (n `mod` 4)
 rotateSticker :: Axis -> Int -> Sticker -> Sticker
 rotateSticker ax mag (Sticker c p o) = Sticker c (coerce rotate ax mag p) (coerce rotate ax mag o)
 
--- Having done that, we want to rotate a whole slice. A slice is all stickers at
--- a certain position along one axis.
+-- And a CubieIndex
+rotateCubieIndex :: Axis -> Int -> CubieIndex -> CubieIndex
+rotateCubieIndex ax mag (CubieIndex p i) = CubieIndex (coerce rotate ax mag p) i
+
+-- Having done that, we want to rotate a whole slice. A slice is all
+-- stickers/cubies at a certain position along one axis.
 
 data Slice = Slice Axis Int
 
-rotateSlice :: Slice -> Int -> Cube -> Cube
-rotateSlice slice@(Slice ax _) mag = modifySlice (rotateSticker ax mag) slice
-
-modifySlice :: (Sticker -> Sticker) -> Slice -> Cube -> Cube
-modifySlice f (Slice ax n) (Cube size stickers) = Cube size stickers'
+rotateSlice (Slice ax n) mag (Cube size stickers indices) = Cube size stickers' indices'
   where
+    rotStick = rotateSticker ax mag
+    rotCubIdx = rotateCubieIndex ax mag
     stickers' =
         map (\s@(Sticker _ (Position p) _) ->
-                if Optics.view (axis ax) p == n then f s else s)
+                if Optics.view (axis ax) p == n then rotStick s else s)
             stickers
+    indices' =
+        map (\ci@(CubieIndex (Position p) _) ->
+                if Optics.view (axis ax) p == n then rotCubIdx ci else ci)
+            indices
 
 axis Rx = Optics._1
 axis Uy = Optics._2
@@ -252,15 +278,17 @@ move B' = rotateSlice (Slice Fz -1) 1
 moves :: [Move] -> Cube -> Cube
 moves = foldr (flip (.) . move) id
 
--- | Knowing what move to do next will require finding cubies. We don't
--- actually store cubies -- we store stickers. So we need to make a map of
--- position to stickers, and then find the position that has desired colors.
-findCubie :: [Color] -> Cube -> [Position]
-findCubie colors (Cube _ stickers) =
+-- Sanity check: The list of cubie indices corresponding to the same list of
+-- stickers should always be the same. So let's find a cubie based on colors so
+-- we can compare a cube at different states of scramble to double check the
+-- above functions.
+findCubie :: [Color] -> Cube -> [CubieIndex]
+findCubie colors (Cube _ stickers idx) =
     let posMap =
             Map.fromListWith (<>)
                 (map (\(Sticker c p _) -> (p, Set.singleton c)) stickers)
-    in Map.keys (Map.filter (== Set.fromList colors) posMap)
+        positions = Map.keys (Map.filter (== Set.fromList colors) posMap)
+    in filter (\(CubieIndex p _) -> p `elem` positions) idx
 
 
 crossProduct :: (Int,Int,Int) -> (Int,Int,Int) -> (Int,Int,Int)
@@ -278,7 +306,7 @@ crossProduct (a_x, a_y, a_z) (b_x, b_y, b_z) = (a_y*b_z - a_z*b_y, a_z*b_x - a_x
 --    If C_y is the the same sign as P_y, parity is Clockwise.
 --    Otherwise parity is Counterclockwise.
 cornerParity :: Cube -> Position -> Int
-cornerParity (Cube _ stickers) p@(Position (_,p_y,_)) =
+cornerParity (Cube _ stickers _) p@(Position (_,p_y,_)) =
     let Sticker _ _ o = head $ filter (\(Sticker c p' _) -> c `elem` [Yellow, White] && p' == p) stickers
         (_,c_y,_) = crossProduct (coerce o) (coerce p)
     in case signum c_y of
@@ -286,12 +314,26 @@ cornerParity (Cube _ stickers) p@(Position (_,p_y,_)) =
         s -> if s == signum p_y then 2 else 1
 
 totalCornerParity :: Cube -> Int
-totalCornerParity c@(Cube size _) = sum $
-    let w = size `div` 2
+totalCornerParity c@(Cube size _ _) = sum $
+    let w = fromIntegral size `div` 2
         a = [-w,w]
     in [cornerParity c (Position (x,y,z)) | x <- a, y <- a, z <- a]
 
--- Next up is permutation parity
+-- Next up is permutation parity.
+--
+-- First, calculate listPerms.
+listPerms [] = 0
+listPerms (x:xs) = elemPerms x xs + listPerms xs where
+    elemPerms z = sum . map (\y -> if z < y then 0 else 1)
+
+-- Now that we've added cubie indices everywhere, and we've made a solved cube
+-- have indices = [1..] by construction, *and* we've made an Ord instance for
+-- CubieIndex that matches on index first, it's as easy as
+permutationParity :: Cube -> Int
+permutationParity = listPerms . cubeIndices
+-- But this is fragile! If I cared, it would be better to be explicit about the
+-- Ord instance and about comparing to a solved cube.
+
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"
     putStr "    Rx: "
@@ -335,8 +377,8 @@ main = do
     putStrLn $ prettyCube $ move R' $ move D' $ move B' $ move B $ move D $ move R solved3x3
 
     putStr "R rotation permutates WGO corner clockwise: "
-    print $ cornerPerm (move R solved3x3) (Position (1,1,-1)) == 1
+    print $ cornerParity (move R solved3x3) (Position (1,1,-1)) == 1
     putStr "R rotation permutates YGO corner counterclockwise: "
-    print $ cornerPerm (move R solved3x3) (Position (1,1,1)) == 2
+    print $ cornerParity (move R solved3x3) (Position (1,1,1)) == 2
     putStr "totalCornerPerm (moves [R,U,L] solved3x3) == 9: "
-    print $ totalCornerPerm (moves [R,U,L] solved3x3) == 9
+    print $ totalCornerParity (moves [R,U,L] solved3x3) == 9

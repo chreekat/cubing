@@ -13,11 +13,13 @@ module Main where
 import Data.Coerce (coerce)
 import Data.List qualified as List
 import Data.Map qualified as Map
+import Data.Maybe qualified as Maybe
+import Data.Ord qualified as Ord
 import Data.Set qualified as Set
 import Data.Tuple.Optics qualified as Optics
+import GHC.Stack (HasCallStack)
 import Optics.Core qualified as Optics
 import String.ANSI qualified as ANSI
-import GHC.Stack (HasCallStack)
 
 -- TODO later: optimize!
 -- https://en.wikipedia.org/wiki/Optimal_solutions_for_the_Rubik%27s_Cube#Kociemba's_algorithm
@@ -188,7 +190,7 @@ prettyCube (Cube size stickers idxs) = concat
 -- Rotating a sticker means rotating its position and orientation. Rotation
 -- happens on an axis and has a magnitude.
 
-data Axis = Rx | Uy | Fz deriving (Show)
+data Axis = Rx | Uy | Fz deriving (Show, Eq)
 
 -- Default math uses the following formula:
 --
@@ -307,7 +309,7 @@ crossProduct (a_x, a_y, a_z) (b_x, b_y, b_z) = (a_y*b_z - a_z*b_y, a_z*b_x - a_x
 --    Otherwise parity is Counterclockwise.
 cornerParity :: Cube -> Position -> Int
 cornerParity (Cube _ stickers _) p@(Position (_,p_y,_)) =
-    let Sticker _ _ o = head $ filter (\(Sticker c p' _) -> c `elem` [Yellow, White] && p' == p) stickers
+    let Sticker _ _ o = head $ filter (\(Sticker c p' _) -> colorAxis c == Uy && p' == p) stickers
         (_,c_y,_) = crossProduct (coerce o) (coerce p)
     in case signum c_y of
         0 -> 0
@@ -333,6 +335,44 @@ permutationParity :: Cube -> Int
 permutationParity = listPerms . cubeIndices
 -- But this is fragile! If I cared, it would be better to be explicit about the
 -- Ord instance and about comparing to a solved cube.
+
+-- Final parity check is edge parity. For this we need to compare edge-cubie
+-- faces to the center faces they are next to. If at least one of them is next
+-- to a center face of the same color (or its opposite), the parity is 0.
+-- Otherwise, it's 1. To do this, we have to assign colors to axes. Then we need
+-- to have an edge to check, which we can do by giving a position.
+-- As an intermediate step, let's check whether a sticker matches its adjacent
+-- center.
+stickerEdgeParity (Sticker color _ orient) = colorAxis color == orientAxis orient
+
+
+edgeParity :: Cube -> Position -> Int
+edgeParity (Cube _ stickers _) p
+    | all stickerEdgeParity stickers' = 1
+    | otherwise = 0
+    where stickers' = filter (\(Sticker _ p' _) -> p' == p) stickers
+
+totalEdgeParity :: Cube -> Int
+totalEdgeParity c@(Cube size _ _) = sum $
+    let w = fromIntegral size `div` 2
+        poss = concatMap List.permutations [[0,w,w],[0,-w,-w]]
+    in [edgeParity c (Position (x,y,z)) | [x,y,z] <- poss]
+
+
+colorAxis :: Color -> Axis
+colorAxis Red    = Rx
+colorAxis Orange = Rx
+colorAxis White  = Uy
+colorAxis Yellow = Uy
+colorAxis Green  = Fz
+colorAxis Blue   = Fz
+
+orientAxis FaceR = Rx
+orientAxis FaceL = Rx
+orientAxis FaceU = Fz
+orientAxis FaceD = Fz
+orientAxis FaceF = Uy
+orientAxis FaceB = Uy
 
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"

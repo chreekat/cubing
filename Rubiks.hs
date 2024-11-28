@@ -1,25 +1,31 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# HLINT ignore "Use <$>" #-}
 
 module Main where
 
+import Control.Monad qualified as Monad
 import Data.Coerce (coerce)
 import Data.List qualified as List
 import Data.Map qualified as Map
-import Data.Maybe qualified as Maybe
-import Data.Ord qualified as Ord
 import Data.Set qualified as Set
 import Data.Tuple.Optics qualified as Optics
 import GHC.Stack (HasCallStack)
 import Optics.Core qualified as Optics
 import String.ANSI qualified as ANSI
+import System.Random (Uniform)
+import System.Random qualified as Random
+import GHC.Generics (Generic)
 
 -- TODO later: optimize!
 -- https://en.wikipedia.org/wiki/Optimal_solutions_for_the_Rubik%27s_Cube#Kociemba's_algorithm
@@ -79,6 +85,7 @@ data CubieIndex = CubieIndex Position Word deriving (Show, Eq, Ord)
 newtype Position = Position (Int,Int,Int) deriving (Show, Eq, Ord)
 newtype Orientation = Orientation (Int,Int,Int) deriving (Show, Eq, Ord)
 
+{-# COMPLETE FaceU, FaceD, FaceF, FaceB, FaceL, FaceR #-}
 pattern FaceU, FaceD, FaceF, FaceB, FaceL, FaceR :: Orientation
 pattern FaceR = Orientation (1,   0,  0)
 pattern FaceL = Orientation (-1,  0,  0)
@@ -262,6 +269,8 @@ axis Fz = Optics._3
 
 data Move = R | L | U | D | F | B
           | R' | L' | U' | D' | F' | B'
+          deriving (Show, Generic, Uniform, Random.UniformRange, Random.Random)
+
 
 move :: Move -> Cube -> Cube
 move R  = rotateSlice (Slice Rx 1)  1
@@ -374,6 +383,19 @@ orientAxis FaceD = Fz
 orientAxis FaceF = Uy
 orientAxis FaceB = Uy
 
+-- Now we can check if a cube is solvable!
+solvable :: Cube -> Bool
+solvable c =
+    even (totalEdgeParity c)
+    && even (permutationParity c)
+    && totalCornerParity c `mod` 3 == 0
+
+randomMoves :: IO [Move]
+randomMoves = do
+    numMoves <- Random.randomRIO (0,30)
+    take numMoves . Random.randoms <$> Random.newStdGen
+
+-- Now to generate random moves to check solvability.
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"
     putStr "    Rx: "
@@ -422,3 +444,5 @@ main = do
     print $ cornerParity (move R solved3x3) (Position (1,1,1)) == 2
     putStr "totalCornerPerm (moves [R,U,L] solved3x3) == 9: "
     print $ totalCornerParity (moves [R,U,L] solved3x3) == 9
+    putStr "twenty sets of random moves stay solvable: "
+    print . all (solvable . flip moves solved3x3) =<< Monad.replicateM 20 randomMoves

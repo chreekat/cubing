@@ -39,26 +39,6 @@ import GHC.Generics (Generic)
  - Orientation means pointing a certain direction. Orientation is relative to an
  - observer, meaning that it is possible to rotate every cubie simultaneously.
  -
- - Positions on a cube start in the center.
- -
- - Given this standard view of a cube,
- -
- -            +----------+
- -            |  0  1  2 |
- -            |  3  4  5 |
- -            |  6  7  8 |
- - +----------+----------+----------+----------+
- - |  9 10 11 | 18 19 20 | 27 28 29 | 45 46 47 |
- - | 12 13 14 | 21 22 23 | 30 31 32 | 48 49 50 |
- - | 15 16 17 | 24 25 26 | 33 34 35 | 51 52 53 |
- - +----------+----------+----------+----------+
- -            | 36 37 38 |
- -            | 39 40 41 |
- -            | 42 43 44 |
- -            +----------+
- -
- - stickers 0, 9, and 57 are part of the cubie at position (-1,1,-1).
- -
  - A cube also has faces and slices, which are the collection of stickers
  - sharing a particular X, Y, or Z coordinate. Rotating a face or slice means
  - rotating and translating the cubies the stickers of the slice are found on.
@@ -390,12 +370,12 @@ solvable c =
     && even (permutationParity c)
     && totalCornerParity c `mod` 3 == 0
 
+-- Now to generate random moves to check solvability.
 randomMoves :: IO [Move]
 randomMoves = do
     numMoves <- Random.randomRIO (0,30)
     take numMoves . Random.randoms <$> Random.newStdGen
 
--- Now to generate random moves to check solvability.
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"
     putStr "    Rx: "

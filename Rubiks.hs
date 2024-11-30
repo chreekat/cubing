@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-type-defaults #-}
 {-# HLINT ignore "Avoid lambda using `infix`" #-}
 {-# HLINT ignore "Use <$>" #-}
 
@@ -57,10 +58,10 @@ import GHC.Generics (Generic)
 data Cube = Cube
     { cubeSize :: Word
     , cubeStickers :: [Sticker]
-    , cubeIndices :: [CubieIndex]
+    , cubePositions :: [CubieIndex]
     } deriving Show
 data Sticker = Sticker Color Position Orientation deriving (Show, Eq, Ord)
-data CubieIndex = CubieIndex Position Word deriving (Show, Eq, Ord)
+type CubieIndex = Position
 
 newtype Position = Position (Int,Int,Int) deriving (Show, Eq, Ord)
 newtype Orientation = Orientation (Int,Int,Int) deriving (Show, Eq, Ord)
@@ -98,7 +99,7 @@ solvedNxN size = Cube size colorList indexList where
     front = [Sticker Orange (Position (x,  y,  w))  FaceF | x <- rng, y <- rng ]
     back  = [Sticker Red    (Position (x,  y,  -w)) FaceB | x <- rng, y <- rng ]
     colorList = front <> back <> left <> right <> up <> down
-    indexList = zipWith CubieIndex (cubiePositions size) [1..]
+    indexList = cubiePositions size
 
 ansi :: Color -> String
 ansi Red    = ANSI.redBg " "
@@ -126,9 +127,7 @@ prettyCube (Cube size stickers idxs) = concat
     ]
     where
 
-    indices = show $ map i (List.sortOn p idxs)
-        where p (CubieIndex p' _) = p'
-              i (CubieIndex _ i') = i'
+    indices = show $ map snd $ List.sortOn fst $ zip idxs [1..]
     uStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceU) stickers
     dStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceD) stickers
     lStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceL) stickers
@@ -223,7 +222,7 @@ rotateSticker ax mag (Sticker c p o) = Sticker c (coerce rotate ax mag p) (coerc
 
 -- And a CubieIndex
 rotateCubieIndex :: Axis -> Int -> CubieIndex -> CubieIndex
-rotateCubieIndex ax mag (CubieIndex p i) = CubieIndex (coerce rotate ax mag p) i
+rotateCubieIndex = coerce rotate
 
 -- Having done that, we want to rotate a whole slice. A slice is all
 -- stickers/cubies at a certain position along one axis.
@@ -239,8 +238,7 @@ rotateSlice (Slice ax n) mag (Cube size stickers indices) = Cube size stickers' 
                 if Optics.view (axis ax) p == n then rotStick s else s)
             stickers
     indices' =
-        map (\ci@(CubieIndex (Position p) _) ->
-                if Optics.view (axis ax) p == n then rotCubIdx ci else ci)
+        map (\idx@(Position p) -> if Optics.view (axis ax) p == n then rotCubIdx idx else idx)
             indices
 
 axis Rx = Optics._1
@@ -279,7 +277,7 @@ findCubie colors (Cube _ stickers idx) =
             Map.fromListWith (<>)
                 (map (\(Sticker c p _) -> (p, Set.singleton c)) stickers)
         positions = Map.keys (Map.filter (== Set.fromList colors) posMap)
-    in filter (\(CubieIndex p _) -> p `elem` positions) idx
+    in filter (`elem` positions) idx
 
 
 crossProduct :: (Int,Int,Int) -> (Int,Int,Int) -> (Int,Int,Int)
@@ -321,7 +319,7 @@ listPerms (x:xs) = elemPerms x xs + listPerms xs where
 -- have indices = [1..] by construction, *and* we've made an Ord instance for
 -- CubieIndex that matches on index first, it's as easy as
 permutationParity :: Cube -> Int
-permutationParity = listPerms . cubeIndices
+permutationParity = listPerms . cubePositions
 -- But this is fragile! If I cared, it would be better to be explicit about the
 -- Ord instance and about comparing to a solved cube.
 

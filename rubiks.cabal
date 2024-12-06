@@ -1,5 +1,5 @@
 cabal-version:   3.0
-name:            rubiks
+name:            cubectl
 version:         0.1.0.0
 license:         AGPL-3.0-only
 license-file:    LICENSE
@@ -9,7 +9,7 @@ extra-doc-files: CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
-executable rubiks
+executable cubectl
     import:           warnings
     main-is:          Rubiks.hs
     build-depends:
@@ -19,5 +19,7 @@ executable rubiks
         optics-core ^>=0.4.1.1,
         random ^>= 1.2.1.1,
         random-shuffle ^>=0.0.4,
+        vector,
+        pretty-simple,
     hs-source-dirs:   .
     default-language: GHC2021

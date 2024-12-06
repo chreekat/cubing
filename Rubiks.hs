@@ -17,16 +17,22 @@ module Main where
 
 import Control.Monad qualified as Monad
 import Data.Coerce (coerce)
+import Data.Foldable qualified as Fold
 import Data.List qualified as List
+import Data.Maybe qualified as Maybe
 import Data.Map qualified as Map
 import Data.Set qualified as Set
 import Data.Tuple.Optics qualified as Optics
+import Data.Vector qualified as Vector
 import GHC.Stack (HasCallStack)
 import Optics.Core qualified as Optics
 import String.ANSI qualified as ANSI
 import System.Random (Uniform)
 import System.Random qualified as Random
+import System.Random.Shuffle qualified as Random
 import GHC.Generics (Generic)
+
+import Debug.Pretty.Simple
 
 -- TODO later: optimize!
 -- https://en.wikipedia.org/wiki/Optimal_solutions_for_the_Rubik%27s_Cube#Kociemba's_algorithm
@@ -102,12 +108,12 @@ solvedNxN size = Cube size colorList indexList where
     indexList = cubiePositions size
 
 ansi :: Color -> String
-ansi Red    = ANSI.redBg " "
-ansi Green  = ANSI.greenBg " "
-ansi Blue   = ANSI.blueBg " "
-ansi Yellow = ANSI.rgbBg 255 255 0 " "
-ansi Orange = ANSI.rgbBg 255 165 0 " "
-ansi White  = ANSI.rgbBg 255 255 255 " "
+ansi Red    = ANSI.redBg (ANSI.red "R")
+ansi Green  = ANSI.greenBg (ANSI.green "G")
+ansi Blue   = ANSI.blueBg (ANSI.blue "B")
+ansi Yellow = ANSI.rgbBg 255 255 0 (ANSI.rgb 255 255 0 "Y")
+ansi Orange = ANSI.rgbBg 255 165 0 (ANSI.rgb 255 165 0 "O")
+ansi White  = ANSI.rgbBg 255 255 255 (ANSI.rgb 255 255 255 "W")
 
 prettySticker :: Sticker -> String
 prettySticker (Sticker c _ _) = ansi c
@@ -127,7 +133,7 @@ prettyCube (Cube size stickers idxs) = concat
     ]
     where
 
-    indices = show $ map snd $ List.sortOn fst $ zip idxs [1..]
+    indices = show $ map snd $ List.sortOn fst $ zip idxs [0..]
     uStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceU) stickers
     dStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceD) stickers
     lStickers = faceMap $ filter (\(Sticker _ _ o) -> o == FaceL) stickers
@@ -160,6 +166,8 @@ prettyCube (Cube size stickers idxs) = concat
     lfr = zipWith (<>) lf right
     lfrb = unlines $ zipWith (<>) lfr back
 
+printCube = putStrLn . prettyCube
+
 {- Modifying a Rubik's cube
  -
  - Start with R as an example. This rotates the R face clockwise. It affects
@@ -187,34 +195,19 @@ data Axis = Rx | Uy | Fz deriving (Show, Eq)
 -- clockwise, not ccw. cos is symmetric around phi so it's just sine that needs
 -- to change.
 
+-- Radius in multiples of pi/2
 rotate :: Axis -> Int -> (Int,Int,Int) -> (Int,Int,Int)
 rotate Rx = rotate' Optics._2 Optics._3
 rotate Uy = rotate' Optics._3 Optics._1
 rotate Fz = rotate' Optics._1 Optics._2
 
-rotate' ax1 ax2 n coord =
-    let val = Optics.view ax1 coord
-        val2 = Optics.view ax2 coord
-        val' = val * cosine n - val2 * sine n
-        val2' = val * sine n + val2 * cosine n
+rotate' ax1 ax2 p coord =
+    let r = pi / 2 * fromIntegral p
+        val = fromIntegral $ Optics.view ax1 coord
+        val2 = fromIntegral $ Optics.view ax2 coord
+        val' = round $ val * cos r + val2 * sin r
+        val2' = round $ -val * sin r + val2 * cos r
     in Optics.set ax1 val' $ Optics.set ax2 val2' coord
-
--- Multiples of pi/2.
--- Sine is inverted to take CW as positive into account.
-sine, cosine :: Int -> Int
-
-sine 0 = 0
-sine 1 = -1
-sine 2 = 0
-sine 3 = 1
-sine n = sine (n `mod` 4)
-
-cosine 0 = 1
-cosine 1 = 0
-cosine 2 = -1
-cosine 3 = 0
-cosine n = cosine (n `mod` 4)
-
 
 -- Now we can actually rotate a sticker.
 rotateSticker :: Axis -> Int -> Sticker -> Sticker
@@ -229,7 +222,7 @@ rotateCubieIndex = coerce rotate
 
 data Slice = Slice Axis Int
 
-rotateSlice (Slice ax n) mag (Cube size stickers indices) = Cube size stickers' indices'
+rotateSlice (Slice ax n) mag (Cube size stickers idxs) = Cube size stickers' idxs'
   where
     rotStick = rotateSticker ax mag
     rotCubIdx = rotateCubieIndex ax mag
@@ -237,9 +230,9 @@ rotateSlice (Slice ax n) mag (Cube size stickers indices) = Cube size stickers' 
         map (\s@(Sticker _ (Position p) _) ->
                 if Optics.view (axis ax) p == n then rotStick s else s)
             stickers
-    indices' =
+    idxs' =
         map (\idx@(Position p) -> if Optics.view (axis ax) p == n then rotCubIdx idx else idx)
-            indices
+            idxs
 
 axis Rx = Optics._1
 axis Uy = Optics._2
@@ -303,10 +296,13 @@ cornerParity (Cube _ stickers _) p@(Position (_,p_y,_)) =
         s -> if s == signum p_y then 2 else 1
 
 totalCornerParity :: Cube -> Int
-totalCornerParity c@(Cube size _ _) = sum $
+totalCornerParity c@(Cube size _ _) = sum (map (cornerParity c) (cornerPositions size))
+
+cornerPositions :: Word -> [Position]
+cornerPositions size =
     let w = fromIntegral size `div` 2
         a = [-w,w]
-    in [cornerParity c (Position (x,y,z)) | x <- a, y <- a, z <- a]
+    in [Position (x,y,z) | x <- a, y <- a, z <- a]
 
 -- Next up is permutation parity.
 --
@@ -340,10 +336,13 @@ edgeParity (Cube _ stickers _) p
     where stickers' = filter (\(Sticker _ p' _) -> p' == p) stickers
 
 totalEdgeParity :: Cube -> Int
-totalEdgeParity c@(Cube size _ _) = sum $
+totalEdgeParity c@(Cube size _ _) = sum (map (edgeParity c) (edgePositions size))
+
+edgePositions :: Word -> [Position]
+edgePositions size =
     let w = fromIntegral size `div` 2
         poss = concatMap List.permutations [[0,w,w],[0,-w,-w]]
-    in [edgeParity c (Position (x,y,z)) | [x,y,z] <- poss]
+    in [Position (x,y,z) | [x,y,z] <- poss]
 
 
 colorAxis :: Color -> Axis
@@ -374,6 +373,81 @@ randomMoves = do
     numMoves <- Random.randomRIO (0,30)
     take numMoves . Random.randoms <$> Random.newStdGen
 
+-- Finally, we can start generating scrambles. We want to evenly sample the
+-- available space, which means putting cubies in random positions with random
+-- orientations. 1 in 12 won't be solvable, so we filter those out.
+-- Let's start by randomly twisting a cubie.
+twistCubie :: Cube -> Position -> IO Cube
+twistCubie (Cube size stickers idxs) pos =
+    let (twistedStickers, rest) = List.partition (\(Sticker _ p _) -> p == pos) stickers
+        orientations = map (\(Sticker _ _ o) -> o) twistedStickers
+    in do
+        startO <- Random.randomRIO (0,length orientations)
+        -- Keep the same handedness
+        let newOrientations = take (length orientations) $ drop startO $ cycle orientations
+        let newStickers = zipWith (\(Sticker c p _) o -> Sticker c p o) twistedStickers newOrientations
+        pure $ Cube size (newStickers <> rest) idxs
+
+-- Now we can twist all edges and corners
+twistCubies :: Cube -> IO Cube
+twistCubies c = do
+    let edgePos = edgePositions (cubeSize c)
+        cornerPos = cornerPositions (cubeSize c)
+    Monad.foldM twistCubie c (cornerPos <> edgePos)
+
+-- | permuteCorners :: Cube -> IO Cube
+-- Next we need to permute pieces. Corners, edges, and centers need to be
+-- permuted individually.
+--
+
+displayColor Red    = "R"
+displayColor Green  = "G"
+displayColor Blue   = "B"
+displayColor Yellow = "Y"
+displayColor Orange = "O"
+displayColor White  = "W"
+
+displayPosition (Position (x,y,z)) =
+    (if x > 0 then 'R' else 'L')
+    : (if y > 0 then 'U' else 'D')
+    : [ if z > 0 then 'F' else 'B' ]
+
+displayOrientation (Orientation (x,y,z))
+    | x > 0 = "R"
+    | x < 0 = "L"
+    | y > 0 = "U"
+    | y < 0 = "D"
+    | z > 0 = "F"
+    | z < 0 = "B"
+    | otherwise = error "bad displayOrientation"
+
+displaySticker (Sticker c p o) =
+    displayColor c <> "[" <> displayPosition p <> "]" <> "→" <> displayOrientation o
+
+c'' [x,y,z] = Position
+    ( if x == 'R' then 1 else -1
+    , if y == 'U' then 1 else -1
+    , if z == 'F' then 1 else -1
+    )
+c'' _ = error "bad c''"
+
+-- First we need a function for moving a sticker to a position. We do it in two
+-- steps. First rotate around the Z axis to get to the correct X and Y position.
+-- Then rotate around X axis to get the correct Z position.
+moveTo :: Position -> Sticker -> Sticker
+moveTo p s = xRotation p (zRotation p s)
+
+-- Remember to negate to rotate around Z clockwise.
+zRotation :: Position -> Sticker -> Sticker
+zRotation (Position (x2, y2, _)) s@(Sticker _ (Position (x1,y1,_)) _) =
+    let phi1 = atan2 (fromIntegral y1) (fromIntegral x1)
+        phi2 = atan2 (fromIntegral y2) (fromIntegral x2)
+    in rotateSticker Fz (round $ -2 * (phi2 - phi1) / pi) s
+
+xRotation (Position (_,y2, z2)) s@(Sticker _ (Position (_,y3,z3)) _) =
+    let theta3 = atan2 (fromIntegral y3) (fromIntegral z3)
+        theta2 = atan2 (fromIntegral y2) (fromIntegral z2)
+    in rotateSticker Rx (round $ 2 * (theta2 - theta3) / pi) s
 main = do
     putStrLn "Rotating centers on their axis doesn't change them:"
     putStr "    Rx: "
@@ -414,7 +488,7 @@ main = do
     let positions = filter (/= (0,0,0)) [(x,y,z) | x <- [-1..1], y <- [-1..1], z <- [-1..1]]
     print $ and [ c1 == c2 | c1 <- positions, ax <- [Rx,Uy,Fz], let c2 = rotate ax 0 c1 ]
 
-    putStrLn $ prettyCube $ move R' $ move D' $ move B' $ move B $ move D $ move R solved3x3
+    printCube $ move R' $ move D' $ move B' $ move B $ move D $ move R solved3x3
 
     putStr "R rotation permutates WGO corner clockwise: "
     print $ cornerParity (move R solved3x3) (Position (1,1,-1)) == 1
@@ -424,3 +498,5 @@ main = do
     print $ totalCornerParity (moves [R,U,L] solved3x3) == 9
     putStr "twenty sets of random moves stay solvable: "
     print . all (solvable . flip moves solved3x3) =<< Monad.replicateM 20 randomMoves
+    putStr "1 in 12 random scrambles is solvable: "
+    print . ((/ 100) . fromIntegral) . length . filter solvable =<< Monad.replicateM 100 (twistCubies solved3x3)

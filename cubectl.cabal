@@ -1,0 +1,57 @@
+cabal-version:   3.0
+name:            cubectl
+version:         0.1.0.0
+license:         AGPL-3.0-only
+license-file:    LICENSE
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common pedantry
+    ghc-options:
+        -Werror
+        -Weverything
+        -Wno-all-missed-specialisations
+        -Wno-missed-specialisations
+        -Wno-missing-exported-signatures
+        -Wno-missing-import-lists
+        -Wno-missing-local-signatures
+        -Wno-missing-safe-haskell-mode
+        -Wno-monomorphism-restriction
+        -Wno-safe
+        -Wno-unsafe
+        -Wno-missing-deriving-strategies
+        -Wno-missing-kind-signatures
+        -Wno-implicit-prelude
+        -Wno-error=unticked-promoted-constructors
+        -Wno-error=deprecations
+        -Wno-error=identities
+        -Wno-error=orphans
+        -Wno-error=type-equality-out-of-scope
+        -Wno-error=unused-type-patterns
+        -- Needed for ghcid
+        -Wno-missing-export-lists
+        -- Needed for hlint
+        -Wno-unrecognised-pragmas
+        -- Needed for DeriveAnyClass
+        -Wno-missing-methods
+
+executable cubectl
+    import:           pedantry
+    main-is:          Rubiks.hs
+    build-depends:
+        base ^>=4.20.2.0,
+        text-ansi,
+        containers,
+        optics-core,
+        random,
+        random-shuffle,
+        vector,
+        pretty-simple,
+    hs-source-dirs:   .
+    default-language: GHC2024
+    default-extensions:
+        ImportQualifiedPost
+        DeriveAnyClass
+        ViewPatterns
+        OverloadedRecordDot
+        NoFieldSelectors
